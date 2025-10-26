@@ -1,0 +1,30 @@
+{
+  "name": "sud-backend",
+  "version": "1.0.0",
+  "description": "SUD - Secure Users Dashboard ",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "nodemon index.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/LiubomyrVV/sud-backend.git"
+  },
+  "keywords": [
+    "sud",
+    "backend",
+    "devops",
+    "team"
+  ],
+  "author": "liubomyr",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/LiubomyrVV/sud-backend/issues"
+  },
+  "homepage": "https://github.com/LiubomyrVV/sud-backend#readme",
+  "dependencies": {
+    "express": "^5.1.0",
+    "nodemon": "^3.1.10"
+  }
+}
