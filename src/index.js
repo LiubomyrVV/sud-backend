@@ -6,7 +6,7 @@ const usersRouter = require('./routes/users');
 const app = express();
 
 
-app.use(cors({ origin: 'http://localhost:5173' })); // allow frontend only
+app.use(cors({ origin: process.env.FRONTEND_URL })); // allow frontend only
 app.use(express.json());
 
 // Routes
