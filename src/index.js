@@ -2,12 +2,14 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const usersRouter = require('./routes/users');
+const cookieParser = require('cookie-parser');
 
 const app = express();
 
 
-app.use(cors({ origin: process.env.FRONTEND_URL })); // allow frontend only
+app.use(cors({ origin: process.env.FRONTEND_URL, credentials: true })); // allow frontend only
 app.use(express.json());
+app.use(cookieParser());
 
 // Routes
 app.use('/api/users', usersRouter);

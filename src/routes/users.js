@@ -25,6 +25,24 @@ router.get('/console', (req, res) => {
   res.status(200).json(users);
 });
 
+router.get('/me', (req, res) => {
+  const token = req.cookies.token; 
+  console.log('Token from cookies:', token);
+  if (!token) return res.status(401).json({ message: 'Unauthorized' });
+
+  try {
+    const userData = jwt.verify(token, process.env.JWT_SECRET);
+    res.status(200).json(userData);
+  } catch (err) {
+    res.status(401).json({ message: 'Invalid token' });
+  }
+});
+
+router.post('/logout', (req, res) => {
+  res.clearCookie('token', { httpOnly: true, secure: true, sameSite: 'Strict' });
+  res.json({ message: 'Logged out' });
+});
+
 router.post('/register', (req, res) => {
   const { name, email, password } = req.body;
 
@@ -61,11 +79,20 @@ router.post('/login', (req, res) => {
 
   // Generate JWT
   const token = jwt.sign(
-    { id: user.id, role: user.role },
+    { id: user.id, role: user.role, email: user.email, name: user.name },
     process.env.JWT_SECRET,
     { expiresIn: '1h' }
   );
-  res.json({ token });
+
+  // Set HttpOnly cookie
+  res.cookie('token', token, {
+    httpOnly: true,        
+    secure: process.env.NODE_ENV === 'production', 
+    sameSite: 'Strict',   
+    maxAge: 60 * 60 * 1000 
+  });
+
+  res.status(200).json({ message: 'User logged successfully' });
 });
 
 router.get('/', authenticate, (req, res) => {
