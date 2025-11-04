@@ -5,10 +5,10 @@ const { authenticate, authorizeAdmin } = require('../middleware/auth');
 const { validateUser } = require('../utils/validate');
 
 const router = express.Router();
+const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 // ============================
 // Mock DB
-// In prod: replace with real database (PostgreSQL, MongoDB, etc.)
 // ============================
 
 let users = [
@@ -21,40 +21,55 @@ let users = [
   },
 ];
 
-router.get('/console', (req, res) => {
-  res.status(200).json(users);
+// ============================
+// GET current user (safe way)
+// ============================
+
+router.get('/me', authenticate, (req, res) => {
+  // req.user добавляется в authenticate после валидации токена
+  const user = users.find((u) => u.id === req.user.id);
+  if (!user) return res.status(404).json({ message: 'User not found' });
+
+  res.status(200).json({
+    id: user.id,
+    name: user.name,
+    email: user.email,
+    role: user.role,
+  });
 });
 
-router.get('/me', (req, res) => {
-  const token = req.cookies.token; 
-  console.log('Token from cookies:', token);
-  if (!token) return res.status(401).json({ message: 'Unauthorized' });
-
-  try {
-    const userData = jwt.verify(token, process.env.JWT_SECRET);
-    res.status(200).json(userData);
-  } catch (err) {
-    res.status(401).json({ message: 'Invalid token' });
-  }
-});
+// ============================
+// LOGOUT
+// ============================
 
 router.post('/logout', (req, res) => {
-  res.clearCookie('token', { httpOnly: true, secure: true, sameSite: 'Strict' });
-  res.json({ message: 'Logged out' });
+  res.clearCookie('token', {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: process.env.NODE_ENV === 'production' ? 'Strict' : 'Lax',
+  });
+  res.status(200).json({ message: 'Logged out successfully' });
 });
+
+// ============================
+// REGISTER
+// ============================
 
 router.post('/register', (req, res) => {
   const { name, email, password } = req.body;
 
-  // Validate input
   if (!validateUser({ name, email, password }))
     return res.status(400).json({ message: 'Invalid input' });
 
-  // Check if user exists
-  if (users.find((user) => user.email === email))
+  if (!emailRegex.test(email))
+    return res.status(400).json({ message: 'Invalid email format' });
+
+  if (password.length < 8)
+    return res.status(400).json({ message: 'Password too short' });
+
+  if (users.some((user) => user.email === email))
     return res.status(400).json({ message: 'Email already exists' });
 
-  // Hash password
   const hashedPassword = bcrypt.hashSync(password, 10);
 
   const newUser = {
@@ -64,45 +79,64 @@ router.post('/register', (req, res) => {
     password: hashedPassword,
     role: 'user',
   };
+
   users.push(newUser);
   res.status(201).json({ message: 'User registered successfully' });
 });
 
+// ============================
+// LOGIN
+// ============================
+
 router.post('/login', (req, res) => {
   const { email, password } = req.body;
   const user = users.find((u) => u.email === email);
-  if (!user) return res.status(400).json({ message: 'Invalid credentials' });
 
-  // Compare passwords
+  if (!user) return res.status(400).json({ message: 'Invalid credentials' });
   if (!bcrypt.compareSync(password, user.password))
     return res.status(400).json({ message: 'Invalid credentials' });
 
-  // Generate JWT
   const token = jwt.sign(
     { id: user.id, role: user.role, email: user.email, name: user.name },
     process.env.JWT_SECRET,
     { expiresIn: '1h' }
   );
 
-  // Set HttpOnly cookie
   res.cookie('token', token, {
-    httpOnly: true,        
-    secure: process.env.NODE_ENV === 'production', 
-    sameSite: 'Strict',   
-    maxAge: 60 * 60 * 1000 
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: process.env.NODE_ENV === 'production' ? 'Strict' : 'Lax',
+    maxAge: 60 * 60 * 1000,
   });
 
-  res.status(200).json({ message: 'User logged successfully' });
+  res.status(200).json({ message: 'User logged in successfully' });
 });
 
-router.get('/', authenticate, (req, res) => {
-  res.json(
-    users.map((u) => ({ id: u.id, name: u.name, email: u.email, role: u.role }))
+// ============================
+// ADMIN ROUTES
+// ============================
+
+// Only admin can view all users
+router.get('/', authenticate, authorizeAdmin, (req, res) => {
+  res.json(users.map((u) => ({
+    id: u.id,
+    name: u.name,
+    email: u.email,
+    role: u.role,
+  })));
+});
+
+// Admin-only console route
+router.get('/console', authenticate, authorizeAdmin, (req, res) => {
+  res.status(200).json(
+    users.map((u) => ({
+      id: u.id,
+      name: u.name,
+      email: u.email,
+      role: u.role,
+    }))
   );
 });
-// ============================
-// Admin ACTIONS
-// ============================
 
 // UPDATE USER
 router.put('/:id', authenticate, authorizeAdmin, (req, res) => {
@@ -110,6 +144,10 @@ router.put('/:id', authenticate, authorizeAdmin, (req, res) => {
   if (!user) return res.status(404).json({ message: 'User not found' });
 
   const { name, email, role } = req.body;
+
+  if (email && users.some((u) => u.email === email && u.id !== user.id))
+    return res.status(400).json({ message: 'Email already in use' });
+
   if (name) user.name = name;
   if (email) user.email = email;
   if (role) user.role = role;
@@ -119,8 +157,13 @@ router.put('/:id', authenticate, authorizeAdmin, (req, res) => {
 
 // DELETE USER
 router.delete('/:id', authenticate, authorizeAdmin, (req, res) => {
-  users = users.filter((u) => u.id !== parseInt(req.params.id));
-  res.json({ message: 'User deleted' });
+  const targetId = parseInt(req.params.id);
+  const targetUser = users.find((u) => u.id === targetId);
+  if (!targetUser) return res.status(404).json({ message: 'User not found' });
+
+  users = users.filter((u) => u.id !== targetId);
+  res.json({ message: 'User deleted', deletedUser: targetUser });
 });
 
 module.exports = router;
+  
