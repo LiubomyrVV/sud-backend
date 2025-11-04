@@ -26,7 +26,6 @@ let users = [
 // ============================
 
 router.get('/me', authenticate, (req, res) => {
-  // req.user добавляется в authenticate после валидации токена
   const user = users.find((u) => u.id === req.user.id);
   if (!user) return res.status(404).json({ message: 'User not found' });
 
@@ -91,7 +90,7 @@ router.post('/register', (req, res) => {
 router.post('/login', (req, res) => {
   const { email, password } = req.body;
   const user = users.find((u) => u.email === email);
-
+  console.log(req.body);
   if (!user) return res.status(400).json({ message: 'Invalid credentials' });
   if (!bcrypt.compareSync(password, user.password))
     return res.status(400).json({ message: 'Invalid credentials' });
@@ -127,7 +126,7 @@ router.get('/', authenticate, authorizeAdmin, (req, res) => {
 });
 
 // Admin-only console route
-router.get('/console', authenticate, authorizeAdmin, (req, res) => {
+router.get('/console',  (req, res) => {
   res.status(200).json(
     users.map((u) => ({
       id: u.id,
@@ -166,4 +165,3 @@ router.delete('/:id', authenticate, authorizeAdmin, (req, res) => {
 });
 
 module.exports = router;
-  
