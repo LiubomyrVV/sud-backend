@@ -90,7 +90,6 @@ router.post('/register', (req, res) => {
 router.post('/login', (req, res) => {
   const { email, password } = req.body;
   const user = users.find((u) => u.email === email);
-  console.log(req.body);
   if (!user) return res.status(400).json({ message: 'Invalid credentials' });
   if (!bcrypt.compareSync(password, user.password))
     return res.status(400).json({ message: 'Invalid credentials' });
