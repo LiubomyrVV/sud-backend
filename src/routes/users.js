@@ -101,10 +101,22 @@ router.post('/logout', (req, res) => {
 // ============================
 // GET all users (admin only)
 // ============================
-router.get('/', authenticate, authorizeAdmin, async (req, res) => {
+router.get('/', authenticate, async (req, res) => {
   try {
-    const users = await query('SELECT id, name, email, role FROM users');
-    res.json(users);
+    if (req.user.role === 'admin') {
+      // Admin: can see all users and their info
+      const users = await query('SELECT id, name, email, role FROM users');
+      return res.status(200).json({ users });
+    } else {
+      // Non-admin: can see only nickname
+      const users = await query('SELECT id, name FROM users');
+      const maskedUsers = users.map(user => ({
+        ...user,
+        email: null,
+        role: null,
+      }));
+      return res.status(200).json({users: maskedUsers});
+    }
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: 'DB error' });
@@ -119,9 +131,21 @@ router.put('/:id', authenticate, authorizeAdmin, async (req, res) => {
   const { name, email, role } = req.body;
 
   try {
-    const existing = await query('SELECT id FROM users WHERE id = @id', { id });
+    // Check if user exists
+    const existing = await query('SELECT id, name, email, role FROM users WHERE id = @id', { id });
     if (!existing[0]) return res.status(404).json({ message: 'User not found' });
 
+    // Check if anything is changing
+    const currentUser = existing[0];
+    console.log(existing);
+    if (
+      (name === undefined || name === currentUser.name) &&
+      (email === undefined || email === currentUser.email) &&
+      (role === undefined || role === currentUser.role)
+    ) {
+      return res.status(204).json({ message: 'No changes made to the user' });
+    }
+    // If email is changing, check for uniqueness
     if (email) {
       const emailExists = await query('SELECT id FROM users WHERE email = @email AND id != @id', { email, id });
       if (emailExists.length > 0) return res.status(400).json({ message: 'Email already in use' });
@@ -132,7 +156,7 @@ router.put('/:id', authenticate, authorizeAdmin, async (req, res) => {
       { name, email, role, id }
     );
 
-    res.json({ message: 'User updated' });
+    res.json({ message: 'User updated successfully' });
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: 'DB error' });
@@ -143,17 +167,27 @@ router.put('/:id', authenticate, authorizeAdmin, async (req, res) => {
 // DELETE user (admin only)
 // ============================
 router.delete('/:id', authenticate, authorizeAdmin, async (req, res) => {
-  const { id } = req.params;
+  const id = parseInt(req.params.id, 10);
+  if (isNaN(id)) return res.status(400).json({ message: 'Invalid id' });
+
   try {
+    if (id === req.user.id) {
+      return res.status(403).json({ message: 'You cannot delete yourself' });
+    }
+
     const user = await query('SELECT * FROM users WHERE id = @id', { id });
     if (!user[0]) return res.status(404).json({ message: 'User not found' });
 
     await query('DELETE FROM users WHERE id = @id', { id });
+
     res.json({ message: 'User deleted', deletedUser: user[0] });
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: 'DB error' });
   }
 });
+
+module.exports = router;
+
 
 module.exports = router;
